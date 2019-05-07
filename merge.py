@@ -1,35 +1,32 @@
 # -*- coding: utf-8 -*-
-import csv
+
 import fitparse
+import tcxparser
 import pytz
-import lxml.etree as et
-import pandas as pd
 import dateutil
-#import matplotlib.pyplot as plt
+import lxml.etree as et
+import csv
+import pandas as pd
 
 UTC = pytz.UTC
 BER = pytz.timezone('Europe/Berlin')
 
-fitFileName = 'fit.fit' 
-fitOutFileName = 'out.csv'
+fitFileName = 'data/fit/1557035072-GIR.fit'
+tcxFileName = 'data/tcx/2019-05-05_07-45-08.tcx'
 
-tcxFileName = 'tcx.tcx'
-tcxOutFileName ='out_tcx.csv'
-
-def writeCSV(outFileName, data):
-    with open(outFileName, 'w') as f:
-        writer = csv.writer(f)
-        writer.writerow([k for k in data[-1].keys()])
-        for entry in data:
-            writer.writerow(entry.values())
+# def writeCSV(outFileName, data):
+#     with open(outFileName, 'w') as f:
+#         writer = csv.writer(f)
+#         writer.writerow([k for k in data[-1].keys()])
+#         for entry in data:
+#             writer.writerow(entry.values())
 
 def fit2CSV(fitFileName, outFileName, timeZone):
     fitFile = fitparse.FitFile(fitFileName, data_processor=fitparse.StandardUnitsDataProcessor())
     fitData = [i.get_values() for i in fitFile.get_messages('record')]
     for item in fitData:
         item['timestamp'] = UTC.localize(item['timestamp']).astimezone(timeZone)
-        
-    writeCSV(outFileName=outFileName, data=fitData)
+    return fitData
 
 def tcx2CSV(tcxFileName, outFileName, timeZone):
     tree = et.parse(tcxFileName)
