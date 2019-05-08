@@ -6,6 +6,7 @@ import pytz
 from lxml import objectify
 import dateutil
 import pandas as pd
+import geopy.distance
 
 UTC = pytz.UTC
 BER = pytz.timezone('Europe/Berlin')
@@ -40,7 +41,7 @@ def GetTcxData(tcxFileName):
 			point['HeartRateBpm.Value'] = float('nan')
 		tcxData.append(point)
 	for item in tcxData:
-		item['Time'] = dateutil.parser.parse(item['Time]'])
+		item['Time'] = dateutil.parser.parse(item['Time'])
 	return tcxData
 
 def GetFitData(fitFileName, timeZone):
@@ -49,3 +50,9 @@ def GetFitData(fitFileName, timeZone):
 	for item in fitData:
 		item['timestamp'] = timeZone.localize(item['timestamp']).astimezone(timeZone)
 	return fitData
+
+tcxData = GetTcxData(tcxFileName)
+for i in range(len(tcxData)-1):
+	first = (tcxData[i]['Position.LatitudeDegrees'], tcxData[i]['Position.LongitudeDegrees'])
+	second = (tcxData[i+1]['Position.LatitudeDegrees'], tcxData[i+1]['Position.LongitudeDegrees'])
+	complete = sum(geopy.distance.vincenty(first, second).m)
