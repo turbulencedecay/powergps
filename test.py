@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 
-import fitparse
-import pytz
+import fitparse, datetime, dateutil, pytz
 from lxml import objectify
-import dateutil
 import pandas as pd
+import numpy as np
 #import geopy.distance
 import matplotlib.pyplot as plt
+from scipy import signal
+
 
 UTC = pytz.UTC
 BER = pytz.timezone('Europe/Berlin')
@@ -55,19 +56,25 @@ tcxData = GetTcxData(tcxFileName)
 fitData = GetFitData(fitFileName)
 
 fitData = pd.DataFrame(fitData)
-fitData.timestamp = fitData.timestamp.apply(pd.to_datetime)
 tcxData = pd.DataFrame(tcxData)
 tcxData = tcxData.fillna(value=-1)
 tcxData = tcxData.apply(pd.to_numeric)
 tcxData.Time = tcxData.Time.apply(pd.to_datetime)
 
-a=fitData.timestamp[5]
-b=tcxData.Time[5]
-c=b-a
-fitData.timestamp = fitData.timestamp - c
+fitData = fitData.set_index('timestamp')
+tcxData = tcxData.set_index('Time')
 
-plt.plot_date(fitData.timestamp, fitData.cadence, '-')
-plt.plot_date(tcxData.Time, tcxData.Cadence, '-')
-#plt.xlim(['2019-05-05 05:45:00+00:00', '2019-05-05 05:50:08+00:00'])
-plt.show()
+resampledFitData = fitData.resample('1s').ffill()
+
+#dt = 29600
+#f = [fitData.cadence.get_values(), fitData.index.get_values()]
+#y = [tcxData.Cadence.get_values(), tcxData.index.get_values()]
+#delta = pd.Timedelta(dt,'ms')
+#fitData.index = fitData.index - delta
+
+#
+#plt.plot_date(fitData.index, fitData.cadence, 'r-')
+#plt.plot_date(tcxData.index, tcxData.Cadence, 'b-')
+#plt.xlim(['2019-05-05 05:45:00+00:00', '2019-05-05 05:55:00+00:00'])
+#plt.show()
 
