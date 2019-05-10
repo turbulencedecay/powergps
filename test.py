@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+Created on Sat May 11 01:24:26 2019
+
+@author: 49176
+"""
+
+# -*- coding: utf-8 -*-
 
 import fitparse, datetime, dateutil, pytz
 from lxml import objectify
@@ -6,7 +13,7 @@ import pandas as pd
 import numpy as np
 #import geopy.distance
 import matplotlib.pyplot as plt
-from scipy import signal
+import scipy as sc
 
 
 UTC = pytz.UTC
@@ -66,15 +73,37 @@ tcxData = tcxData.set_index('Time')
 
 resampledFitData = fitData.resample('1s').ffill()
 
-#dt = 29600
-#f = [fitData.cadence.get_values(), fitData.index.get_values()]
-#y = [tcxData.Cadence.get_values(), tcxData.index.get_values()]
+tcxTime = tcxData.index
+tcxTime = tcxTime - tcxTime[0]
+tcxTime = tcxTime.seconds + tcxTime.microseconds / 1e+6
+
+fitTime = resampledFitData.index
+fitTime = fitTime - fitTime[0]
+fitTime = fitTime.seconds + fitTime.microseconds / 1e+6
+
+#dt = 29600  # manual best value
+
+y2 = np.vstack((fitTime.get_values(), resampledFitData.cadence.get_values()))
+y1 = np.vstack((tcxTime.get_values(), tcxData.Cadence.get_values()))
+maxLen = min(y2.argmax(), y1.argmax())
+y2 = y2.T[:maxLen]
+y1 = y1.T[:maxLen]
+
+y2=y2.T
+y1=y1.T
+err = np.sqrt(np.square((y2[1]-y1[1]))+np.square((y2[0]-y1[0])))
+
+from scipy.optimize import fmin
+
+p0 = [0,] # Inital guess of no shift
+found_shift = fmin(err_func, p0)[0]
+
 #delta = pd.Timedelta(dt,'ms')
 #fitData.index = fitData.index - delta
 
-#
-#plt.plot_date(fitData.index, fitData.cadence, 'r-')
+
+#plt.plot_date(resampledFitData.index, resampledFitData.cadence, 'r-')
 #plt.plot_date(tcxData.index, tcxData.Cadence, 'b-')
-#plt.xlim(['2019-05-05 05:45:00+00:00', '2019-05-05 05:55:00+00:00'])
+#plt.xlim(['2019-05-05 05:45:00+00:00', '2019-05-05 05:47:00+00:00'])
 #plt.show()
 
