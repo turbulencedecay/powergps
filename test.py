@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat May 11 01:24:26 2019
-
 @author: 49176
 """
 
@@ -13,8 +12,8 @@ import pandas as pd
 import numpy as np
 #import geopy.distance
 import matplotlib.pyplot as plt
-import scipy as sc
-
+#import scipy as sc
+from scipy import signal
 
 UTC = pytz.UTC
 BER = pytz.timezone('Europe/Berlin')
@@ -83,20 +82,33 @@ fitTime = fitTime.seconds + fitTime.microseconds / 1e+6
 
 #dt = 29600  # manual best value
 
-y2 = np.vstack((fitTime.get_values(), resampledFitData.cadence.get_values()))
-y1 = np.vstack((tcxTime.get_values(), tcxData.Cadence.get_values()))
-maxLen = min(y2.argmax(), y1.argmax())
-y2 = y2.T[:maxLen]
-y1 = y1.T[:maxLen]
+y2 = np.array((fitTime.get_values(), resampledFitData.cadence.get_values()))
+y1 = np.array((tcxTime.get_values(), tcxData.Cadence.get_values()))
 
-y2=y2.T
-y1=y1.T
-err = np.sqrt(np.square((y2[1]-y1[1]))+np.square((y2[0]-y1[0])))
+def GetWindow(y1, y2, windowLengthFac = 0.05):
+    maxLen = min(y2.argmax(), y1.argmax())
+    middle = int(maxLen/2)
+    windowLength = int(maxLen*windowLengthFac)
+    y1_ = y1.T[middle-windowLength:middle+windowLength]
+    y2_ = y2.T[middle-windowLength:middle+windowLength]
+    return (y1_.T, y2_.T)
 
-from scipy.optimize import fmin
+windows = GetWindow(y1,y2)
+corr = signal.correlate(windows[0][1], windows[1][1])
+pos = np.argmax(corr)
 
-p0 = [0,] # Inital guess of no shift
-found_shift = fmin(err_func, p0)[0]
+#y2=y2.T
+#y1=y1.T
+
+#def err(y1, y2):
+#    return np.sqrt( (y2[0]-y1[0])**2 + (y2[1]-y1[1])**2 )
+
+#err = np.sqrt(np.square((y2[1]-y1[1]))+np.square((y2[0]-y1[0])))
+
+#from scipy.optimize import fmin
+
+#p0 = [0] # Inital guess of no shift
+#found_shift = fmin(err, p0)[0]
 
 #delta = pd.Timedelta(dt,'ms')
 #fitData.index = fitData.index - delta
@@ -106,4 +118,7 @@ found_shift = fmin(err_func, p0)[0]
 #plt.plot_date(tcxData.index, tcxData.Cadence, 'b-')
 #plt.xlim(['2019-05-05 05:45:00+00:00', '2019-05-05 05:47:00+00:00'])
 #plt.show()
-
+#plt.plot(y2[0], y2[1], 'r-')
+#plt.plot(y1[0], y1[1], 'b-')
+plt.plot(corr)
+plt.show()
