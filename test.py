@@ -7,16 +7,15 @@ Created on Sat May 11 01:24:26 2019
 
 # -*- coding: utf-8 -*-
 
-import fitparse, datetime, dateutil, pytz
+import fitparse, dateutil, pytz
 from lxml import objectify
 import pandas as pd
 import numpy as np
 #import geopy.distance
 import matplotlib.pyplot as plt
-import scipy as sc
-from scipy import optimize
-from scipy import signal
-#from signal_alignment import *
+#import scipy as sc
+#from scipy import optimize
+#from scipy import signal
 
 UTC = pytz.UTC
 BER = pytz.timezone('Europe/Berlin')
@@ -75,66 +74,60 @@ tcxData = tcxData.set_index('Time')
 
 resampledFitData = fitData.resample('1s').ffill()
 
-tcxTime = tcxData.index
-tcxTime = tcxTime - tcxTime[0]
-tcxTime = tcxTime.seconds + tcxTime.microseconds / 1e+6
+#   magic number warning
+delta = pd.Timedelta(30,'s')
 
-fitTime = resampledFitData.index
-fitTime = fitTime - fitTime[0]
-fitTime = fitTime.seconds + fitTime.microseconds / 1e+6
+resampledFitData.index = resampledFitData.index - delta
 
-#dt = 29600  # manual best value
+resampledFitData = resampledFitData[(resampledFitData.index >= min(tcxData.index)) & (resampledFitData.index <= max(tcxData.index))]
 
-y1 = np.vstack((tcxTime.get_values(), tcxData.Cadence.get_values()))
-y2 = np.vstack((fitTime.get_values(), resampledFitData.cadence.get_values()))
+tcxData.index = tcxData.index.round('s')
+resampledFitData = resampledFitData.loc[tcxData.index]
 
-#maxLen = min(y2.argmax(), y1.argmax())
-maxLen = 100
+for item in(resampledFitData.columns):
+    tcxData = tcxData.join(resampledFitData[item])
 
-y1 = y1.T[:maxLen].T
-y2 = y2.T[:maxLen].T
+tcxData = tcxData.drop('heart_rate', axis=1) # empty
+tcxData = tcxData.drop('position_lat', axis=1) # empty
+tcxData = tcxData.drop('position_long', axis=1) # empty
+tcxData = tcxData.drop('speed', axis=1) #speed in m/h
+#tcxData = tcxData.drop('Speed', axis=1) #speed in m/s
+tcxData = tcxData.drop('enhanced_speed', axis=1) #speed in km/h
+tcxData = tcxData.drop('distance', axis=1) #distance in km
 
-#corr = np.correlate(y1[1],y2[1],'full')
-#position = np.argmax(corr)
+def GetPace():
+    # speed in m/s
+    decimalPace = 1000 / tcxData.Speed.get_values() # min/km
+    decimalPace[decimalPace == np.inf] = 0
+    minutes, seconds = divmod(decimalPace, 60)
+    return (minutes,seconds)
 
-y1Filtered = sc.ndimage.filters.gaussian_filter1d(y1[1],3)
-y2Filtered = sc.ndimage.filters.gaussian_filter1d(y2[1],3)
+#y1 = np.vstack((tcxTime.get_values(), tcxData.Cadence.get_values()))
+#y2 = np.vstack((fitTime.get_values(), resampledFitData.cadence.get_values()))
+#
+#maxLen = 100
+#
+#y1 = y1.T[:maxLen].T
+#y2 = y2.T[:maxLen].T
+#
+#y1Filtered = sc.ndimage.filters.gaussian_filter1d(y1[1],3)
+#y2Filtered = sc.ndimage.filters.gaussian_filter1d(y2[1],3)
+#
+#maxTimeShift = 0
+#bestShift = 0
+#for shift in range(-maxLen, maxLen):
+#    timeShift = (np.roll(y1Filtered, shift) * y2Filtered).sum()
+#    if timeShift > maxTimeShift:
+#        maxTimeShift = timeShift
+#        bestShift = shift
+#
+#bestShift=bestShift-2
 
-maxTimeShift = 0
-bestShift = 0
-for shift in range(-maxLen, maxLen):
-    timeShift = (np.roll(y1Filtered, shift) * y2Filtered).sum()
-    if timeShift > maxTimeShift:
-        maxTimeShift = timeShift
-        bestShift = shift
-
-bestShift=bestShift-2
-
-fitTime = fitTime + bestShift
-
-
-#def getWindow(X, windowWidth):
-#    position = int(len(X.T)/2)
-#    return X.T[position-int(windowWidth/2):position+int(windowWidth/2)]
-
-#def err(deltaX):
-#    return np.sqrt((y2[0]+deltaX-y1[0])**2 + (y2[1]-y1[1])**2 ).sum()
-
-#initDelta = 0.0
-#shiftX = optimize.fmin(err, initDelta)
-#shiftX = -70
-#y2[0] = y2[0]+shiftX
-#delta = pd.Timedelta(dt,'ms')
-#fitData.index = fitData.index - delta
-
-
-plt.plot_date(resampledFitData.index, resampledFitData.cadence, 'r-')
-plt.plot_date(tcxData.index, tcxData.Cadence, 'b-')
-plt.xlim(['2019-05-05 05:45:00+00:00', '2019-05-05 05:47:00+00:00'])
-plt.show()
-
-#plt.plot(y1[0][:100], y1[1][:100], 'r-')
-#plt.plot(y2[0][:100], y2[1][:100], 'b-')
-#plt.plot(y1[0], y1[1], 'r-')
-#plt.plot(y2[0]-abs(bestShift), y2[1], 'g-')
-#plt.show()
+if __name__ == '__main__':
+#    plt.plot_date(tcxData.index, tcxData.Speed, 'r-')
+#    plt.plot_date(tcxData.index, tcxData.speed/1000, 'b-')
+#    plt.show()
+#    plt.xlim(['2019-05-05 07:00:00+00:00', '2019-05-05 07:30:00+00:00'])
+#    a=GetPace()
+    pass
+#
