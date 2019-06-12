@@ -7,10 +7,12 @@ Created on Sat May 11 01:24:26 2019
 
 # -*- coding: utf-8 -*-
 
-import fitparse, dateutil, pytz, datetime
+import fitparse, dateutil, pytz
+from datetime import datetime
 from lxml import objectify
 import pandas as pd
 import numpy as np
+from scipy import interpolate
 #from geopy.distance import geodesic
 #import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
@@ -120,33 +122,45 @@ def GetPace():
 def SplitIntoLaps(distance=1000):
     laps = []
     numberOfLaps = int(max(tcxData.DistanceMeters)/distance) + 1
+    
     for i in range(numberOfLaps):
         lap = tcxData[(tcxData.DistanceMeters>=i*distance) & (tcxData.DistanceMeters<=(i+1)*distance)]
         lap = lap.reset_index()
         laps.append(lap)
-    inserts = []
-    for lapNo, lap in enumerate(laps):
-        if lap.iloc[-1].DistanceMeters % distance == 0:
-            dfToInsert = lap.iloc[-1]
-        else:
-            rowToInsert = [np.NaN for x in range(len(laps[0].columns))]            
-            colIndex = list(lap.columns).index('DistanceMeters')
-            rowToInsert[colIndex] = (lapNo+1) * distance
-            dfToInsert = pd.DataFrame(data=rowToInsert, index=lap.columns)
-        inserts.append(dfToInsert)
-#    first = pd.concat((laps[0], dfToInsert.T))
-#    for i in range(len(laps)):
-#        if i==0:
-#            lap = pd.concat((first, laps[i]))
-#        else:
-#            rowToInsert[colIndex] = i * distance
-#            dfToInsert = pd.DataFrame(data=rowToInsert, index=lap.columns)
-#            lap = pd.concat((lap, dfToInsert.T, laps[i]))
-#    chunk['AltitudeMeters'] = chunk.AltitudeMeters.interpolate(method='linear', limit_area='inside')
-#    chunk['Position_LongitudeDegrees'] = chunk.Position_LongitudeDegrees.interpolate(method='linear', limit_area='inside')
-#    chunk['Position_LatitudeDegrees'] = chunk.Position_LatitudeDegrees.interpolate(method='linear', limit_area='inside')
     
-    return laps, inserts
+    splits = []
+    for i in range(len(laps)-1):
+        lap = laps[i]
+        if lap.iloc[-1].DistanceMeters % distance == 0:
+            splitTime = lap.iloc[-1].Time.timestamp()
+            splitTime = datetime.fromtimestamp(splitTime)
+            splitTime = BER.localize(splitTime).astimezone(UTC)
+            splitDistance = lap.iloc[-1].DistanceMeters
+        else:
+            splitDistance = float((i+1) * distance)
+            previousLap = lap
+            actualLap = laps[i+1]
+            previousLap_ = previousLap.iloc[-1:]
+            previousLap_.Time = [x.timestamp() for x in previousLap_.Time]
+            actualLap_ = actualLap.iloc[:1]
+            actualLap_.Time = [x.timestamp() for x in actualLap_.Time]
+            x = np.array([previousLap_.DistanceMeters.get_values(), actualLap_.DistanceMeters.get_values()]).flatten()
+            y = np.array([previousLap_.Time.get_values(), actualLap_.Time.get_values()]).flatten()
+            f = interpolate.interp1d(x,y)
+            splitTime_ = f(splitDistance)
+            splitTime = datetime.fromtimestamp(splitTime_, UTC)
+        splits.append([splitTime, splitDistance])
+    
+    for i in range(len(laps)-1):
+        cadence = round(laps[i]['Cadence'].mean())
+        heartRate = round(laps[i]['HeartRateBpm_Value'].mean())
+        formPower = round(laps[i]['Form Power'].mean())
+        legSpringStiffness = laps[i]['Leg Spring Stiffness'].mean()
+        speed = laps[i]['Speed'].mean()
+        power = round(laps[i]['power'].mean())
+        stanceTime = round(laps[i]['stance_time'].mean())
+        verticalOscillation = laps[i]['vertical_oscillation'].mean()
+    return splits
     
 #def WriteComplete():
 #    root = ET.Element('TrainingCenterDatabase')
@@ -218,15 +232,20 @@ def SplitIntoLaps(distance=1000):
 #bestShift=bestShift-2
 
 if __name__ == '__main__':
-    laps, inserts = SplitIntoLaps()
-    pre = laps[0]
-    act = laps[1]
-    pre_ = pre.iloc[-2:]
-    pre_.Time = [x.timestamp() for x in pre_.Time]
-    act_ = act.iloc[:2]
-    act_.Time = [x.timestamp() for x in act_.Time]
-    ins_ = inserts[0].T
-    int_ = pd.concat(objs=(pre_, ins_, act_))
-    int_ = int_.reset_index()
-    int_ = int_.drop(['index'], axis=1)
+    splitData = SplitIntoLaps()
+#    pre = laps[0]
+#    act = laps[1]
+#    pre_ = pre.iloc[-1:]
+#    pre_.Time = [x.timestamp() for x in pre_.Time]
+#    act_ = act.iloc[:1]
+#    act_.Time = [x.timestamp() for x in act_.Time]
+#    ins_ = inserts[0].T
+#    int_ = pd.concat(objs=(pre_, ins_, act_))
+#    int_ = int_.reset_index()
+#    int_ = int_.drop(['index'], axis=1)
+#    x = np.array([pre_.DistanceMeters.get_values(), act_.DistanceMeters.get_values()]).flatten()
+#    y = np.array([pre_.Time.get_values(), act_.Time.get_values()]).flatten()
+#    f = interpolate.interp1d(x,y)
+#    int_.Time.iloc[1] = f(inserts[0].T.DistanceMeters.get_values()[0])
+#    int_.Time = [datetime.fromtimestamp(x) for x in int_.Time]
     pass
