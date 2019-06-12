@@ -7,12 +7,14 @@ Created on Sat May 11 01:24:26 2019
 
 # -*- coding: utf-8 -*-
 
-import fitparse, dateutil, pytz
+import fitparse, dateutil, pytz, datetime
 from lxml import objectify
 import pandas as pd
 import numpy as np
-from geopy.distance import geodesic
-import matplotlib.pyplot as plt
+#from geopy.distance import geodesic
+#import matplotlib.pyplot as plt
+import xml.etree.ElementTree as ET
+
 #import scipy as sc
 #from scipy import optimize
 
@@ -64,7 +66,6 @@ fitData = GetFitData(fitFileName)
 
 fitData = pd.DataFrame(fitData)
 tcxData = pd.DataFrame(tcxData)
-#tcxData = tcxData.fillna(value=-1)
 tcxData = tcxData.apply(pd.to_numeric)
 tcxData.Time = tcxData.Time.apply(pd.to_datetime)
 
@@ -73,7 +74,7 @@ tcxData = tcxData.set_index('Time')
 
 resampledFitData = fitData.resample('1s').ffill()
 
-#   magic number warning
+#   magic number warning add minimum fitting procedure
 delta = pd.Timedelta(30,'s')
 
 resampledFitData.index = resampledFitData.index - delta
@@ -102,13 +103,11 @@ tcxData.AltitudeMeters=tcxData.AltitudeMeters.fillna(method='backfill')
 tcxData.DistanceMeters=tcxData.DistanceMeters.interpolate(method='linear', limit_area='inside')
 tcxData.DistanceMeters=tcxData.DistanceMeters.interpolate(method='linear', limit_area='outside')
 
-#   fill missing AltitudeMeters
+#   fill missing Latitudes / Longitudes
 tcxData.Position_LongitudeDegrees=tcxData.Position_LongitudeDegrees.interpolate(method='linear', limit_area='inside')
 tcxData.Position_LongitudeDegrees=tcxData.Position_LongitudeDegrees.interpolate(method='linear', limit_area='outside')
 tcxData.Position_LatitudeDegrees=tcxData.Position_LatitudeDegrees.interpolate(method='linear', limit_area='inside')
 tcxData.Position_LatitudeDegrees=tcxData.Position_LatitudeDegrees.interpolate(method='linear', limit_area='outside')
-
-
 
 def GetPace():
     # speed in m/s
@@ -117,6 +116,85 @@ def GetPace():
     minutes, seconds = divmod(decimalPace, 60)
     paceElements = np.array((np.abs(minutes),np.round(seconds)))
     return paceElements.T
+
+def SplitIntoLaps(distance=1000):
+    laps = []
+    numberOfLaps = int(max(tcxData.DistanceMeters)/distance) + 1
+    for i in range(numberOfLaps):
+        lap = tcxData[(tcxData.DistanceMeters>=i*distance) & (tcxData.DistanceMeters<=(i+1)*distance)]
+        lap = lap.reset_index()
+        laps.append(lap)
+    inserts = []
+    for lapNo, lap in enumerate(laps):
+        if lap.iloc[-1].DistanceMeters % distance == 0:
+            dfToInsert = lap.iloc[-1]
+        else:
+            rowToInsert = [np.NaN for x in range(len(laps[0].columns))]            
+            colIndex = list(lap.columns).index('DistanceMeters')
+            rowToInsert[colIndex] = (lapNo+1) * distance
+            dfToInsert = pd.DataFrame(data=rowToInsert, index=lap.columns)
+        inserts.append(dfToInsert)
+#    first = pd.concat((laps[0], dfToInsert.T))
+#    for i in range(len(laps)):
+#        if i==0:
+#            lap = pd.concat((first, laps[i]))
+#        else:
+#            rowToInsert[colIndex] = i * distance
+#            dfToInsert = pd.DataFrame(data=rowToInsert, index=lap.columns)
+#            lap = pd.concat((lap, dfToInsert.T, laps[i]))
+#    chunk['AltitudeMeters'] = chunk.AltitudeMeters.interpolate(method='linear', limit_area='inside')
+#    chunk['Position_LongitudeDegrees'] = chunk.Position_LongitudeDegrees.interpolate(method='linear', limit_area='inside')
+#    chunk['Position_LatitudeDegrees'] = chunk.Position_LatitudeDegrees.interpolate(method='linear', limit_area='inside')
+    
+    return laps, inserts
+    
+#def WriteComplete():
+#    root = ET.Element('TrainingCenterDatabase')
+#    root.set(
+#            'xsi:schemaLocation',
+#            ' '.join([
+#                    'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2',
+#                    'http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd',
+#                    ])
+#            )
+#    root.set('xmlns', 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2')
+#    root.set('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance')
+#    
+#    initTime = tcxData.index[0].isoformat() + 'Z'
+#    
+#    activities = ET.SubElement(root, 'Activities')
+#    activity = ET.SubElement(activities, 'Activity')
+#    activity.set('Sport', 'Running')
+#    activity_id = ET.SubElement(activity, 'Id')
+#    activity_id.text = initTime
+#    activities = ET.SubElement(root, 'Activities')
+#    
+#    lap = ET.SubElement(activity, 'Lap')
+#    lap.set('StartTime', initTime)
+#    total_time = ET.SubElement(lap, 'TotalTimeSeconds')
+#    total_time.text = '1'
+#    intensity = ET.SubElement(lap, 'Intensity')
+#    intensity.text = 'Active'
+#
+#    track = ET.SubElement(lap, 'Track')
+#    trackpoint = ET.SubElement(track, 'Trackpoint')
+#    time = ET.SubElement(trackpoint, 'Time')
+#    time.text = now
+#    position = ET.SubElement(trackpoint, 'Position')
+#    latitude = ET.SubElement(position, 'LatitudeDegrees')
+#    latitude.text = '{:.1f}'.format(random.uniform(-90.0, 90.0))
+#    longitude = ET.SubElement(position, 'LongitudeDegrees')
+#    longitude.text = '{:.1f}'.format(random.uniform(-180.0, 180.0))
+#    altitude = ET.SubElement(trackpoint, 'AltitudeMeters')
+#    altitude.text = '{}'.format(random.randrange(0, 4000))
+#    distance = ET.SubElement(trackpoint, 'DistanceMeters')
+#    distance.text = '0'
+#    heart_rate = ET.SubElement(trackpoint, 'HeartRateBpm')
+#    heart_rate.text = '{}'.format(random.randrange(60, 180))
+#
+#    print('<?xml version="1.0" encoding="UTF-8"?>')
+#    ET.dump(root)
+
 
 #y1 = np.vstack((tcxTime.get_values(), tcxData.Cadence.get_values()))
 #y2 = np.vstack((fitTime.get_values(), resampledFitData.cadence.get_values()))
@@ -140,30 +218,15 @@ def GetPace():
 #bestShift=bestShift-2
 
 if __name__ == '__main__':
-#    plt.plot_date(tcxData.index, tcxData.enhanced_altitude, 'r-')
-#    plt.plot_date(tcxData.index, tcxData.AltitudeMeters, 'b-')
-#    factor=(tcxData.enhanced_altitude-tcxData.AltitudeMeters).mean()
-#    plt.plot(tcxData.enhanced_altitude.get_values()-factor, 'r-')
-#    plt.plot(tcxData.AltitudeMeters.get_values(), 'b-')
-#    plt.plot(tcxData.power.get_values()/100, 'b-')
-#    plt.plot(tcxData.Speed.get_values(), 'r-')
-#    plt.show()
-#    plt.xlim(['2019-05-05 07:00:00+00:00', '2019-05-05 07:30:00+00:00'])
-#    a=GetPace()
-#    pass
-    firstLat = tcxData.Position_LatitudeDegrees[0::2].get_values()
-    secondLat = tcxData.Position_LatitudeDegrees[1::2].get_values()
-    firstLon = tcxData.Position_LongitudeDegrees[0::2].get_values()
-    secondLon = tcxData.Position_LongitudeDegrees[1::2].get_values()
-    firsts = np.array((firstLat, firstLon))
-    seconds = np.array((secondLat, secondLon))
-    d=[]
-    sum=0
-    for a,b in zip(firsts.T, seconds.T):
-        sum +=geodesic(a, b).meters
-        d.append(sum)
-    d=np.array(d)
-    plt.plot(tcxData.distance.get_values(),'-')
-    plt.plot(tcxData.DistanceMeters.get_values(), '-')
-    plt.show()
-#for item in 1
+    laps, inserts = SplitIntoLaps()
+    pre = laps[0]
+    act = laps[1]
+    pre_ = pre.iloc[-2:]
+    pre_.Time = [x.timestamp() for x in pre_.Time]
+    act_ = act.iloc[:2]
+    act_.Time = [x.timestamp() for x in act_.Time]
+    ins_ = inserts[0].T
+    int_ = pd.concat(objs=(pre_, ins_, act_))
+    int_ = int_.reset_index()
+    int_ = int_.drop(['index'], axis=1)
+    pass
