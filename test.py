@@ -7,17 +7,15 @@ Created on Sat May 11 01:24:26 2019
 
 # -*- coding: utf-8 -*-
 
-import fitparse, dateutil, pytz
+import fitparse, dateutil, pytz, random
 from datetime import datetime
 from lxml import objectify
 import pandas as pd
 import numpy as np
-from scipy import interpolate
+import scipy as sc
 #from geopy.distance import geodesic
 #import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
-
-#import scipy as sc
 #from scipy import optimize
 
 UTC = pytz.UTC
@@ -133,8 +131,7 @@ def SplitIntoLaps(distance=1000):
         lap = laps[i]
         if lap.iloc[-1].DistanceMeters % distance == 0:
             splitTime = lap.iloc[-1].Time.timestamp()
-            splitTime = datetime.fromtimestamp(splitTime)
-            splitTime = BER.localize(splitTime).astimezone(UTC)
+            splitTime = datetime.utcfromtimestamp(splitTime).strftime('%Y-%m-%d %H:%M:%S.%f')
             splitDistance = lap.iloc[-1].DistanceMeters
         else:
             splitDistance = float((i+1) * distance)
@@ -146,24 +143,35 @@ def SplitIntoLaps(distance=1000):
             actualLap_.Time = [x.timestamp() for x in actualLap_.Time]
             x = np.array([previousLap_.DistanceMeters.get_values(), actualLap_.DistanceMeters.get_values()]).flatten()
             y = np.array([previousLap_.Time.get_values(), actualLap_.Time.get_values()]).flatten()
-            f = interpolate.interp1d(x,y)
+            f = sc.interpolate.interp1d(x,y)
             splitTime_ = f(splitDistance)
-            splitTime = datetime.fromtimestamp(splitTime_, UTC)
-        splits.append([splitTime, splitDistance])
-    
-    for i in range(len(laps)-1):
+            splitTime = datetime.utcfromtimestamp(splitTime_).strftime('%Y-%m-%d %H:%M:%S.%f')
         cadence = round(laps[i]['Cadence'].mean())
         heartRate = round(laps[i]['HeartRateBpm_Value'].mean())
+        maxHeartRate = round(laps[i]['HeartRateBpm_Value'].max())
         formPower = round(laps[i]['Form Power'].mean())
         legSpringStiffness = laps[i]['Leg Spring Stiffness'].mean()
         speed = laps[i]['Speed'].mean()
-        power = round(laps[i]['power'].mean())
+        power = round(laps[i]['power'].max())
         stanceTime = round(laps[i]['stance_time'].mean())
         verticalOscillation = laps[i]['vertical_oscillation'].mean()
-    return splits
+        
+        splits.append([splitDistance, 
+                       splitTime,
+                       cadence,
+                       heartRate,
+                       maxHeartRate,
+                       formPower,
+                       legSpringStiffness,
+                       speed,
+                       power,
+                       stanceTime,
+                       verticalOscillation])
+    return splits, laps
     
-#def WriteComplete():
-#    root = ET.Element('TrainingCenterDatabase')
+def WriteComplete(splits, laps):
+    root = ET.Element('TrainingCenterDatabase')
+    root.set('xmlns', 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2')
 #    root.set(
 #            'xsi:schemaLocation',
 #            ' '.join([
@@ -171,43 +179,85 @@ def SplitIntoLaps(distance=1000):
 #                    'http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd',
 #                    ])
 #            )
-#    root.set('xmlns', 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2')
 #    root.set('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance')
-#    
-#    initTime = tcxData.index[0].isoformat() + 'Z'
-#    
-#    activities = ET.SubElement(root, 'Activities')
-#    activity = ET.SubElement(activities, 'Activity')
-#    activity.set('Sport', 'Running')
-#    activity_id = ET.SubElement(activity, 'Id')
-#    activity_id.text = initTime
-#    activities = ET.SubElement(root, 'Activities')
-#    
-#    lap = ET.SubElement(activity, 'Lap')
-#    lap.set('StartTime', initTime)
-#    total_time = ET.SubElement(lap, 'TotalTimeSeconds')
-#    total_time.text = '1'
-#    intensity = ET.SubElement(lap, 'Intensity')
-#    intensity.text = 'Active'
-#
-#    track = ET.SubElement(lap, 'Track')
-#    trackpoint = ET.SubElement(track, 'Trackpoint')
-#    time = ET.SubElement(trackpoint, 'Time')
-#    time.text = now
-#    position = ET.SubElement(trackpoint, 'Position')
-#    latitude = ET.SubElement(position, 'LatitudeDegrees')
-#    latitude.text = '{:.1f}'.format(random.uniform(-90.0, 90.0))
-#    longitude = ET.SubElement(position, 'LongitudeDegrees')
-#    longitude.text = '{:.1f}'.format(random.uniform(-180.0, 180.0))
-#    altitude = ET.SubElement(trackpoint, 'AltitudeMeters')
-#    altitude.text = '{}'.format(random.randrange(0, 4000))
-#    distance = ET.SubElement(trackpoint, 'DistanceMeters')
-#    distance.text = '0'
-#    heart_rate = ET.SubElement(trackpoint, 'HeartRateBpm')
-#    heart_rate.text = '{}'.format(random.randrange(60, 180))
-#
+    activities = ET.SubElement(root, 'Activities')
+    activity = ET.SubElement(activities, 'Activity')
+    activity.set('Sport', 'Running')
+    activityId = ET.SubElement(activity, 'Id')
+
+    for i in range(len(splits)):
+        if i == 0:
+            startTime = laps[i].iloc[0].Time.isoformat() + 'Z'
+        else:
+            time_ = datetime.strptime(splits[i][1], '%Y-%m-%d %H:%M:%S.%f')
+            startTime = time_.isoformat() + 'Z'
+        
+        activityId.text = startTime
+        lap = ET.SubElement(activity, 'Lap')
+        lap.set('StartTime', startTime)
+        
+        totalTime = ET.SubElement(lap, 'TotalTimeSeconds')
+        delta = laps[i].iloc[-1].Time - laps[i].iloc[0].Time
+        totalTime.text = str(delta.seconds)
+        
+        distance = ET.SubElement(lap, 'DistanceMeters')
+        distance.text = str(splits[i][0])
+        
+        maximumSpeed = ET.SubElement(lap, 'MaximumSpeed')
+        maximumSpeed.text = str(splits[i][7])
+        
+#        calories = ET.SubElement(lap, 'Calories')
+#        calories.text = '507'
+        
+        avgHeartRate = ET.SubElement(lap, 'AverageHeartRateBpm')
+        avgHeartRateValue = ET.SubElement(avgHeartRate, 'Value')
+        avgHeartRateValue.text = str(splits[i][3])
+        
+        maxHeartRate = ET.SubElement(lap, 'MaximumHeartRateBpm')
+        maxHeartRateValue = ET.SubElement(maxHeartRate, 'Value')
+        maxHeartRateValue.text = str(splits[i][4])
+        
+        intensity = ET.SubElement(lap, 'Intensity')
+        intensity.text = 'Active'
+        
+        cadence = ET.SubElement(lap, 'Cadence')
+        cadence.text = str(splits[i][2])
+        
+        triggerMethod = ET.SubElement(lap, 'TriggerMethod')
+        triggerMethod.text = 'Distance'
+        
+        track = ET.SubElement(lap, 'Track')
+        for j in range(len(laps[i])):
+            trackpoint = ET.SubElement(track, 'Trackpoint')
+            
+            time = ET.SubElement(trackpoint, 'Time')
+            time.text = str(laps[i].iloc[j].Time)
+            
+            position = ET.SubElement(trackpoint, 'Position')
+            latitude = ET.SubElement(position, 'LatitudeDegrees')
+            latitude.text = str(laps[i].iloc[j].Position_LatitudeDegrees)
+            longitude = ET.SubElement(position, 'LongitudeDegrees')
+            longitude.text = str(laps[i].iloc[j].Position_LongitudeDegrees)
+            
+            altitude = ET.SubElement(trackpoint, 'AltitudeMeters')
+            altitude.text = str(laps[i].iloc[j].AltitudeMeters)
+            
+            distance = ET.SubElement(trackpoint, 'DistanceMeters')
+            distance.text = str(laps[i].iloc[j].DistanceMeters)
+            
+            heartRateBpm = ET.SubElement(trackpoint, 'HeartRateBpm')
+            heartRateBpmValue = ET.SubElement(heartRateBpm, 'Value')
+            heartRateBpmValue.text = str(laps[i].iloc[j].HeartRateBpm_Value)
+            
+            cadence = ET.SubElement(trackpoint, 'Cadence')
+            cadence.text = str(laps[i].iloc[j].Cadence)
+            
+            sensorState = ET.SubElement(trackpoint, 'SensorState')
+            sensorState.text = 'Present'
 #    print('<?xml version="1.0" encoding="UTF-8"?>')
 #    ET.dump(root)
+    tree = ET.ElementTree(root)
+    tree.write('out.xml')
 
 
 #y1 = np.vstack((tcxTime.get_values(), tcxData.Cadence.get_values()))
@@ -232,20 +282,6 @@ def SplitIntoLaps(distance=1000):
 #bestShift=bestShift-2
 
 if __name__ == '__main__':
-    splitData = SplitIntoLaps()
-#    pre = laps[0]
-#    act = laps[1]
-#    pre_ = pre.iloc[-1:]
-#    pre_.Time = [x.timestamp() for x in pre_.Time]
-#    act_ = act.iloc[:1]
-#    act_.Time = [x.timestamp() for x in act_.Time]
-#    ins_ = inserts[0].T
-#    int_ = pd.concat(objs=(pre_, ins_, act_))
-#    int_ = int_.reset_index()
-#    int_ = int_.drop(['index'], axis=1)
-#    x = np.array([pre_.DistanceMeters.get_values(), act_.DistanceMeters.get_values()]).flatten()
-#    y = np.array([pre_.Time.get_values(), act_.Time.get_values()]).flatten()
-#    f = interpolate.interp1d(x,y)
-#    int_.Time.iloc[1] = f(inserts[0].T.DistanceMeters.get_values()[0])
-#    int_.Time = [datetime.fromtimestamp(x) for x in int_.Time]
+    splitData, lapData = SplitIntoLaps()
+    WriteComplete(splitData, lapData)
     pass
